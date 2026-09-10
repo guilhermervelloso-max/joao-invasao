@@ -3,6 +3,20 @@ import { SPEAKER_LABEL, type Line } from "../data/dialogues";
 
 type DoneCallback = () => void;
 
+function isPhoneTouchDevice(): boolean {
+  if (typeof window === "undefined") return false;
+  const shortSide = Math.min(window.innerWidth, window.innerHeight);
+  const longSide = Math.max(window.innerWidth, window.innerHeight);
+  const phoneShape = shortSide <= 520 && longSide <= 980;
+  const hasTouch =
+    navigator.maxTouchPoints > 0 ||
+    window.matchMedia("(pointer: coarse)").matches;
+  const hasMouse =
+    window.matchMedia("(any-hover: hover)").matches &&
+    window.matchMedia("(any-pointer: fine)").matches;
+  return phoneShape && hasTouch && !hasMouse;
+}
+
 export class DialogueBox {
   private scene: Phaser.Scene;
   private root: Phaser.GameObjects.Container;
@@ -10,15 +24,18 @@ export class DialogueBox {
   private nameText: Phaser.GameObjects.Text;
   private bodyText: Phaser.GameObjects.Text;
   private hintText: Phaser.GameObjects.Text;
+  private touchZone: Phaser.GameObjects.Rectangle | null = null;
   private queue: Line[] = [];
   private active = false;
   private onDone: DoneCallback | null = null;
   private keySpace!: Phaser.Input.Keyboard.Key;
   private keyEnter!: Phaser.Input.Keyboard.Key;
   private lockedUntil = 0;
+  private readonly phoneTouch: boolean;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
+    this.phoneTouch = isPhoneTouchDevice();
     const { width, height } = scene.scale;
     const boxW = Math.max(320, width - 40);
 
@@ -47,11 +64,16 @@ export class DialogueBox {
       .setOrigin(0, 0);
 
     this.hintText = scene.add
-      .text(boxW / 2 - 24, 38, "ESPAÇO / ENTER", {
-        fontFamily: "Courier New, monospace",
-        fontSize: "11px",
-        color: "#9aa3b5",
-      })
+      .text(
+        boxW / 2 - 24,
+        38,
+        this.phoneTouch ? "TOQUE PARA CONTINUAR" : "ESPAÇO / ENTER",
+        {
+          fontFamily: "Courier New, monospace",
+          fontSize: "11px",
+          color: "#9aa3b5",
+        },
+      )
       .setOrigin(1, 0.5);
 
     this.root = scene.add
@@ -70,10 +92,29 @@ export class DialogueBox {
       this.keySpace = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
       this.keyEnter = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     }
+
+    if (this.phoneTouch) {
+      this.touchZone = scene.add
+        .rectangle(width / 2, height / 2, width, height, 0x000000, 0.001)
+        .setInteractive({ useHandCursor: true })
+        .setScrollFactor(0)
+        .setDepth(1100)
+        .setVisible(false);
+      this.touchZone.on("pointerup", this.onTouchAdvance);
+      scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        this.touchZone?.off("pointerup", this.onTouchAdvance);
+        this.touchZone?.destroy();
+        this.touchZone = null;
+      });
+    }
   }
 
   isOpen() {
     return this.active;
+  }
+
+  advanceFromTouch() {
+    this.onTouchAdvance();
   }
 
   play(lines: Line[], onDone?: DoneCallback) {
@@ -81,6 +122,7 @@ export class DialogueBox {
     this.onDone = onDone ?? null;
     this.active = true;
     this.root.setVisible(true);
+    this.touchZone?.setVisible(true);
     this.lockedUntil = this.scene.time.now + 250;
     this.showCurrent();
   }
@@ -97,6 +139,13 @@ export class DialogueBox {
       this.advance();
     }
   }
+
+  private onTouchAdvance = () => {
+    if (!this.phoneTouch) return;
+    if (!this.active) return;
+    if (this.scene.time.now < this.lockedUntil) return;
+    this.advance();
+  };
 
   private showCurrent() {
     const line = this.queue[0];
@@ -123,6 +172,7 @@ export class DialogueBox {
   private close() {
     this.active = false;
     this.root.setVisible(false);
+    this.touchZone?.setVisible(false);
     const done = this.onDone;
     this.onDone = null;
     done?.();
