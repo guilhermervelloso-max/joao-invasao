@@ -44,7 +44,7 @@ export const INTRO_LINES: Line[] = [
 export const FIRST_CONTACT_LINES: Line[] = [
   {
     speaker: "joao",
-    text: "Aliens na Lapa? Hoje não. Hoje eu limpo essa rua.",
+    text: "Aliens em Copacabana? Hoje não. Hoje eu limpo essa rua.",
   },
 ];
 
